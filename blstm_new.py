@@ -70,20 +70,23 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size ,
     # X = tf.unstack(X, timesteps, 1)
     # Y = tf.unstack(Y, timesteps, 1)
 
-    lstm_cell = rnn.BasicLSTMCell(num_hidden, forget_bias=1.0)
+    lstm_cell = tf.nn.rnn_cell.RNNCell(num_hidden) #, forget_bias=1.0)
     # Forward direction stacked lstm cell
-    lstm_fw_cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * encoding_layers)
+    #lstm_fw_cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell for _ in range(encoding_layers)])
+    lstm_fw_cell = [lstm_cell for _ in range(encoding_layers)]
     # Backward direction stacked lstm cell
-    lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * encoding_layers)
-
+    #lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell for _ in range(encoding_layers)])
+    lstm_bw_cell = [lstm_cell for _ in range(encoding_layers)]
     # Get lstm cell output
     # X --->  batch ,time_step , embed_dim
-    try:
-        encoder_outputs, output_states = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, X,
-            X_length, dtype=tf.float32)
-    except Exception: # Old TensorFlow version only returns outputs not states
-        encoder_outputs , hs = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, X,
-            X_length, dtype=tf.float32)
+    #for n in range(encoding_layers) :
+    #    print n
+    #try:
+    encoder_outputs, output_states = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, X,
+                   sequence_length=X_length, dtype=tf.float32)
+    #except Exception: # Old TensorFlow version only returns outputs not states
+    #            encoder_outputs , hs = tf.contrib.rnn.stack_bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, X,
+    #        sequence_length=X_length, dtype=tf.float32)
 
     # outputs is 2*[batch_size, max_time, num_units], one for forward and one for backward
     encoder_outputs = tf.concat(encoder_outputs,2)
@@ -168,12 +171,12 @@ if __name__ == '__main__':
     batch_size = 1 #128 #@TODO Not sure if we can do batches
     display_step = 200
 
-    num_input = 28 # Depending on character embeddings we get on google
+    num_input = 300 # Depending on character embeddings we get on google ---> char embedding dimension
     num_hidden = 128 # Given in paper   ### wasn't it 256 ?
-    encoding_layers = 1 #Giver in paper
+    encoding_layers = 4 #Given in paper
     decoding_layers = 2 #Given in paper
     max_iter = 20 #@TODO can decide
-    vocab_size = 200 
+    vocab_size = 200 #number of decoder words we choose to keep in dicitonary
     max_in_time  = 3
     max_out_time = 1
     
