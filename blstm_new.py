@@ -56,8 +56,11 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size ,
 	x_input = tf.placeholder(tf.int32, [batch_size, max_in_time])
 	X = tf.nn.embedding_lookup(embedding_encoder, x_input)
 	X_length = tf.placeholder(tf.int32, [batch_size])
-	y_input = tf.placeholder(tf.int32, [max_out_time, batch_size])
+	y_input = tf.placeholder(tf.int32, [batch_size, max_out_time])
+	y_shifted_input = tf.placeholder(tf.int32, [batch_size, max_out_time])
 	Y = tf.nn.embedding_lookup(decoding_encoder, y_input) #### do we need this ###
+	# Y_shifted = tf.nn.embedding_lookup(decoding_encoder, y_shifted_input)
+	# Y = y_input
 	Y_length = tf.placeholder(tf.int32, [batch_size])
 	#length_penalty_weight =
 	beam_width = 3
@@ -77,31 +80,36 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size ,
 	# Backward direction stacked lstm cell
 	lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(encoding_layers)])
 
-	encoder_outputs, _ = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, X, 
+	encoder_outputs, encoder_state = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, X, 
 			sequence_length=X_length, dtype=tf.float32)
 	encoder_outputs = tf.concat(encoder_outputs, 2)
+	# encoder_state = tf.concat(encoder_state, 2)
 
 
-	decoder_cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * decoding_layers)
-	projection_layer = tf.layers.Dense(vocab_size)  ## linear ---> Wx + b 
- 
-	attention_states = tf.transpose(encoder_outputs, [0,1,2])
+	decoder_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(decoding_layers)])
+	projection_layer = tf.layers.Dense(vocab_size)  ## linear ---> Wx + b  
+	attention_states = encoder_outputs
 	#Size is [batch_size, max_time, num_units]
 
-	attention_mechanism = tf.contrib.seq2seq.LuongAttention(2*num_hidden, 
+	attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(2*num_hidden, 
 		attention_states, memory_sequence_length=Y_length) ### changed to Y_length -- dont know if it makes sense but it works
 
-	decoder_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
+	# decoder_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
+	# 	attention_mechanism, attention_layer_size=2*num_hidden)
+	attn_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
 		attention_mechanism, attention_layer_size=2*num_hidden)
-		
+	decoder_cell = tf.contrib.rnn.OutputProjectionWrapper(attn_cell, vocab_size)
+	
+	# initial_state = tf.zeros([batch_size, num_hidden])
 	if training: 
 
 
-		helper = tf.contrib.seq2seq.TrainingHelper(Y, Y_length, time_major=True)
+		helper = tf.contrib.seq2seq.TrainingHelper(Y, Y_length)
+
 
 
 		decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell, helper, 
-			encoder_outputs, output_layer=projection_layer)
+			initial_state=decoder_cell.zero_state(dtype=tf.float32, batch_size=batch_size), output_layer=projection_layer)
 
 		output, _, output_lengths = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=max_out_time)
 
@@ -114,22 +122,23 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size ,
 		# the left by one time step with an end-of-sentence tag appended on the right.
 		
 		# Cross entropy loss
+		# print y_shifted_input, logits
 		crossent = tf.nn.sparse_softmax_cross_entropy_with_logits( \
-			labels=Y_shifted, logits=logits) ### i think it should be just Y 
+			labels=y_shifted_input, logits=logits) ### i think it should be just Y 
 		target_weights = tf.sequence_mask(output_lengths, max_out_time, dtype=logits.dtype)
 		loss_op = (tf.reduce_sum(crossent * target_weights) /
 			batch_size)
 
 		#Automatically updates variables
 		optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(loss_op)
-		return x_input, y_input, X_length, Y_length, crossent, loss_op, optimizer
+		return x_input, y_input, y_shifted_input, X_length, Y_length, crossent, loss_op, optimizer
 
 	decoder = tf.contrib.seq2seq.BeamSearchDecoder(
 	cell=decoder_cell,
 	#embedding = embedding_decoder, -- dont think this is reqquired , can uncomment later
 	start_tokens= start_token,
 	end_token= end_token,
-	initial_state=encoder_outputs,
+	initial_state=initial_state,
 	beam_width=beam_width,
 	output_layer=projection_layer,
 	length_penalty_weight=length_penalty_weight)
@@ -189,7 +198,7 @@ if __name__ == '__main__':
 	
 	# Start training
 	with tf.Session() as sess:
-		x_input, y_input, X_length, Y_length, crossent, loss_op, optimizer = \
+		x_input, y_input, y_shifted_input, X_length, Y_length, crossent, loss_op, optimizer = \
 		BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size , \
 			  decoding_layers, max_in_time, max_out_time)
 		# Run the initializer
@@ -200,9 +209,9 @@ if __name__ == '__main__':
 				#Define input_data of size 1 x timesteps x num_input : @TODO Can we do batches?
 				# Define Y as timesteps_output x num_input. Include start and end tags for all
 				# I "think" only end tags will also do if we don't have to learn embeddings.
-
-				print batch_x, x_length
-				feed_dict = {x_input:batch_x, X_length:x_length, y_input:batch_y, Y_length:y_length}
+				shape_y = batch_y.shape
+				batch_y_shifted = numpy.hstack(start_token * np.ones((shape_y[0], 1)), batch_y[:, :-1])
+				feed_dict = {x_input:batch_x, X_length:x_length, y_input:batch_y, Y_length:y_length, y_shifted_input:batch_y_shifted}
 				#Run and train
 				batch_loss, _ = sess.run([loss_op, optimizer], feed_dict)
 				if step % display_step == 0 or step == 1:
