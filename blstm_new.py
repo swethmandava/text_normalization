@@ -29,17 +29,18 @@ def create_data() :
 
 def process_data(train_x ,len_x ,train_y , len_y, batch_size):
 	
-	 train_data = tf.train.shuffle_batch(
+	 train_x , len_x , train_y , len_y = tf.train.shuffle_batch(
 	  [ train_x , len_x , train_y , len_y],
 	  batch_size= batch_size,
 	  num_threads=4,
 	  capacity=50000,
 	  min_after_dequeue=10000)
-	 return train_data
+	 return train_x , len_x , train_y , len_y
  
 	
 def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size , 
-	decoding_layers, max_in_time, max_out_time, training=True):
+	decoding_layers, max_in_time, max_out_time, beam_width, start_token,
+	end_token, training=True):
 
 	
 	# Inputs
@@ -48,7 +49,8 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size ,
 	#embedding_encoder --> embedding matrix
 	
 	embedding_encoder = tf.random_normal((num_classes,300 ))
-	decoding_encoder = tf.random_normal(( vocab_size, 1))
+	# decoding_encoder = tf.one_hot(vocab_size, vocab_size, dtype=tf.float32)
+	decoding_encoder = tf.random_normal(( vocab_size, vocab_size))
 	#@TODO Gotta define encodings
 	# embedding_encoder = tf.get_variable("embeddings", shape=embedding_matrix.shape,  \
 	#                              initializer=tf.constant_initializer(np.array(embedding_matrix)) , trainable=False)  
@@ -59,13 +61,13 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size ,
 	y_input = tf.placeholder(tf.int32, [batch_size, max_out_time])
 	y_shifted_input = tf.placeholder(tf.int32, [batch_size, max_out_time])
 	Y = tf.nn.embedding_lookup(decoding_encoder, y_input) #### do we need this ###
+	# start_token = tf.nn.embedding_lookup(decoding_encoder, start_token)
+	# end_token = tf.nn.embedding_lookup(decoding_encoder, end_token)
+	# print start_token
+
 	# Y_shifted = tf.nn.embedding_lookup(decoding_encoder, y_shifted_input)
 	# Y = y_input
 	Y_length = tf.placeholder(tf.int32, [batch_size])
-	#length_penalty_weight =
-	beam_width = 3
-	start_token = 'SOS' 
-	end_token = 'EOS'
 	 
 	# Reshape to match rnn.static_bidirectional_rnn function requirements
 	# Current data input shape: (batch_size, max_in_time, n_input)
@@ -135,13 +137,12 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size ,
 
 	decoder = tf.contrib.seq2seq.BeamSearchDecoder(
 	cell=decoder_cell,
-	#embedding = embedding_decoder, -- dont think this is reqquired , can uncomment later
-	start_tokens= start_token,
+	embedding = decoding_encoder,
+	start_tokens= [start_token]*batch_size,
 	end_token= end_token,
-	initial_state=initial_state,
-	beam_width=beam_width,
-	output_layer=projection_layer,
-	length_penalty_weight=length_penalty_weight)
+	initial_state=decoder_cell.zero_state(dtype=tf.float32, batch_size=batch_size),
+	beam_width=1, #@TODO increase beam_width
+	output_layer=projection_layer)
 
 	output, _, output_lengths = tf.contrib.seq2seq.dynamic_decode(decoder, 
 		maximum_iterations=max_out_time)
@@ -176,6 +177,9 @@ if __name__ == '__main__':
 	vocab_size = 200 #number of decoder words we choose to keep in dicitonary
 	max_in_time  = 3
 	max_out_time = 1
+	beam_width = 5 #@TODO check paper
+	start_token = 0 #@TODO define
+	end_token = 20 #@TODO define
 	
 	
 	#@TODO https://github.com/tensorflow/tensorflow/issues/3420
@@ -193,26 +197,37 @@ if __name__ == '__main__':
 
 	
 	train_x , len_x , train_y , len_y = create_data()
-	train_data = process_data(train_x , len_x , train_y , len_y , batch_size)     
+	# train_x , len_x , train_y , len_y = process_data(train_x , len_x , train_y , len_y , batch_size)   
+	# num_batches, _, _ = tf.shape(train_x)  
+	num_batches = train_x.shape[0]//batch_size
 	
 	
 	# Start training
 	with tf.Session() as sess:
 		x_input, y_input, y_shifted_input, X_length, Y_length, crossent, loss_op, optimizer = \
 		BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size , \
-			  decoding_layers, max_in_time, max_out_time)
+			  decoding_layers, max_in_time, max_out_time, beam_width, start_token, end_token)
 		# Run the initializer
-		sess.run(init)
+		# sess.run(init)
+		# writer = tf.summary.FileWriter("logs/", graph=tf.get_default_graph())
 
 		for epoch in range(1, epochs+1):
-			for step , batch_x, x_length, batch_y, y_length in enumerate(train_data): 
+			for step in range(batch_size): 
+
+				batch_x = train_x[step * batch_size: (step+1)*batch_size, :]
+				batch_y = train_y[step * batch_size: (step+1)*batch_size, :]
+				x_length = len_x[step * batch_size: (step+1)*batch_size]
+				y_length = len_y[step * batch_size: (step+1)*batch_size]
+
 				#Define input_data of size 1 x timesteps x num_input : @TODO Can we do batches?
 				# Define Y as timesteps_output x num_input. Include start and end tags for all
 				# I "think" only end tags will also do if we don't have to learn embeddings.
-				shape_y = batch_y.shape
-				batch_y_shifted = numpy.hstack(start_token * np.ones((shape_y[0], 1)), batch_y[:, :-1])
+
+				batch_y_shifted = np.hstack((start_token * np.ones((batch_size, 1)), batch_y[:, :-1]))
 				feed_dict = {x_input:batch_x, X_length:x_length, y_input:batch_y, Y_length:y_length, y_shifted_input:batch_y_shifted}
 				#Run and train
+				# add_summary = sess.run(writer)
+				# writer.close()
 				batch_loss, _ = sess.run([loss_op, optimizer], feed_dict)
 				if step % display_step == 0 or step == 1:
 					print("Step " + str(step) + ", Minibatch Loss= " + \
