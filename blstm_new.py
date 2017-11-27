@@ -5,7 +5,7 @@ import numpy as np
 
 path = ''
 data_exists = 1
-
+USE_GPU = 0 
    
 def create_data() :
    
@@ -76,20 +76,49 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size ,
 	# Y = tf.unstack(Y, timesteps, 1) 
 
 	lstm_cell = tf.nn.rnn_cell.LSTMCell(num_hidden)
+    
+    num_gpus =3
+    
+    if USE_GPU :
+        
+        cells = []
+        for i in range(encoding_layers):
+            cells.append(tf.contrib.rnn.DeviceWrapper(
+                    tf.nn.rnn_cell.LSTMCell(num_units),
+                    "/gpu:%d" % (encoding_layers % num_gpus)))
+        
+        lstm_fw_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
+        
+        
+        lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
+        
+    else :    
 
-	# Forward direction stacked lstm cell
-	lstm_fw_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(encoding_layers)])
-	# Backward direction stacked lstm cell
-	lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(encoding_layers)])
+	    # Forward direction stacked lstm cell
+	    lstm_fw_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(encoding_layers)])
+	    # Backward direction stacked lstm cell
+	    lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(encoding_layers)])
 
 	encoder_outputs, encoder_state = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, X, 
 			sequence_length=X_length, dtype=tf.float32)
 	encoder_outputs = tf.concat(encoder_outputs, 2)
 	# encoder_state = tf.concat(encoder_state, 2)
 
-
-	decoder_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(decoding_layers)])
-	projection_layer = tf.layers.Dense(vocab_size)  ## linear ---> Wx + b  
+     if USE_GPU :
+         cells = []
+         for i in range(decoding_layers):
+             cells.append(tf.contrib.rnn.DeviceWrapper(
+                     tf.contrib.rnn.LSTMCell(num_units),
+                     "/gpu:%d" % (decoding_layers % num_gpus)))
+    
+         decoder_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
+     else :    
+         decoder_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(decoding_layers)])
+	
+    
+    
+    
+    projection_layer = tf.layers.Dense(vocab_size)  ## linear ---> Wx + b  
 	attention_states = encoder_outputs
 	#Size is [batch_size, max_time, num_units]
 
@@ -98,12 +127,13 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size ,
 
 	# decoder_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
 	# 	attention_mechanism, attention_layer_size=2*num_hidden)
-	attn_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
+	
+    attn_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
 		attention_mechanism, attention_layer_size=2*num_hidden)
 	decoder_cell = tf.contrib.rnn.OutputProjectionWrapper(attn_cell, vocab_size)
 	
 	# initial_state = tf.zeros([batch_size, num_hidden])
-	if training: 
+	if training:   
 
 
 		helper = tf.contrib.seq2seq.TrainingHelper(Y, Y_length)
