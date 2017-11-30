@@ -10,121 +10,121 @@ is_train = True
    
 def create_data() :
    
-    #load X , Y , len_x , len_y
-    #train_x =   
-    #train_y =
-    # len_x =
-    #len_y =
-    train_x = np.array([[1,2,3] , [4,5,6]])
-    train_y = np.array([[1],[2]])
-    len_x = np.array([3,3])
-    len_y = np.array([1,1])
-    #converting everything to tensors 
-    # train_x = tf.convert_to_tensor(train_x, np.float32)
-    # train_y = tf.convert_to_tensor(train_y, np.float32)
-    # len_x = tf.convert_to_tensor(len_x, np.float32)
-    # len_y = tf.convert_to_tensor(len_y, np.float32)
-    #X = Dataset.from_tensor_slices((train_x, train_y)  
-    return train_x , len_x , train_y , len_y
+	#load X , Y , len_x , len_y
+	#train_x =   
+	#train_y =
+	# len_x =
+	#len_y =
+	train_x = np.array([[1,2,3] , [4,5,6]])
+	train_y = np.array([[1],[2]])
+	len_x = np.array([3,3])
+	len_y = np.array([1,1])
+	#converting everything to tensors 
+	# train_x = tf.convert_to_tensor(train_x, np.float32)
+	# train_y = tf.convert_to_tensor(train_y, np.float32)
+	# len_x = tf.convert_to_tensor(len_x, np.float32)
+	# len_y = tf.convert_to_tensor(len_y, np.float32)
+	#X = Dataset.from_tensor_slices((train_x, train_y)  
+	return train_x , len_x , train_y , len_y
 
 
 def process_data(train_x ,len_x ,train_y , len_y, batch_size):
-    
-     train_x , len_x , train_y , len_y = tf.train.shuffle_batch(
-      [ train_x , len_x , train_y , len_y],
-      batch_size= batch_size,
-      num_threads=4,
-      capacity=50000,
-      min_after_dequeue=10000)
-     return train_x , len_x , train_y , len_y
+	
+	 train_x , len_x , train_y , len_y = tf.train.shuffle_batch(
+	  [ train_x , len_x , train_y , len_y],
+	  batch_size= batch_size,
+	  num_threads=4,
+	  capacity=50000,
+	  min_after_dequeue=10000)
+	 return train_x , len_x , train_y , len_y
  
-    
+	
 def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
-    decoding_layers, max_in_time, max_out_time, beam_width, start_token,
-    end_token, embedding_matrix , training=True):
+	decoding_layers, max_in_time, max_out_time, beam_width, start_token,
+	end_token):
 
-    
-    # Inputs
-    #max_in_time --> encoder time steps
-    #max_out_time --> decoder time steps
-    #embedding_encoder --> embedding matrix
-    
-    embedding_encoder = tf.random_normal((num_classes,300 ))
-    # decoding_encoder = tf.one_hot(vocab_size, vocab_size, dtype=tf.float32)
-    #decoding_encoder = tf.random_normal(( vocab_size, vocab_size))
-    #@TODO Gotta define encodings
-    #embedding_encoder = tf.get_variable("embeddings", shape=embedding_matrix.shape,  \
-    #                          initializer=tf.constant_initializer(np.array(embedding_matrix)) , trainable=True)  
-    
-    x_input = tf.placeholder(tf.int32, [batch_size, max_in_time])
-    X = tf.nn.embedding_lookup(embedding_encoder, x_input)
-    X_length = tf.placeholder(tf.int32, [batch_size])
-    y_input = tf.placeholder(tf.int32, [batch_size, max_out_time])
-    y_shifted_input = tf.placeholder(tf.int32, [batch_size, max_out_time])
-    #Y = tf.nn.embedding_lookup(decoding_encoder, y_input) #### do we need this ###
-    # start_token = tf.nn.embedding_lookup(decoding_encoder, start_token)
-    # end_token = tf.nn.embedding_lookup(decoding_encoder, end_token)
-    # print start_token
+	
+	# Inputs
+	#max_in_time --> encoder time steps
+	#max_out_time --> decoder time steps
+	#embedding_encoder --> embedding matrix
+	
+	embedding_encoder = tf.random_normal((num_classes,300 ))
+	# decoding_encoder = tf.one_hot(vocab_size, vocab_size, dtype=tf.float32)
+	#decoding_encoder = tf.random_normal(( vocab_size, vocab_size))
+	#@TODO Gotta define encodings
+	#embedding_encoder = tf.get_variable("embeddings", shape=embedding_matrix.shape,  \
+	#                          initializer=tf.constant_initializer(np.array(embedding_matrix)) , trainable=True)  
+	
+	x_input = tf.placeholder(tf.int32, [batch_size, max_in_time])
+	X = tf.nn.embedding_lookup(embedding_encoder, x_input)
+	X_length = tf.placeholder(tf.int32, [batch_size])
+	y_input = tf.placeholder(tf.float32, [batch_size, max_out_time])
+	y_shifted_input = tf.placeholder(tf.int32, [batch_size, max_out_time])
+	#Y = tf.nn.embedding_lookup(decoding_encoder, y_input) #### do we need this ###
+	# start_token = tf.nn.embedding_lookup(decoding_encoder, start_token)
+	# end_token = tf.nn.embedding_lookup(decoding_encoder, end_token)
+	# print start_token
 
-    # Y_shifted = tf.nn.embedding_lookup(decoding_encoder, y_shifted_input)
-    # Y = y_input
-    Y_length = tf.placeholder(tf.int32, [batch_size])
-     
-    # Reshape to match rnn.static_bidirectional_rnn function requirements
-    # Current data input shape: (batch_size, max_in_time, n_input)
-    # Required shape: 'timesteps' tensors list of shape (batch_size, num_input)
-    # X = tf.unstack(X, max_in_time, 1)
-    # Y = tf.unstack(Y, timesteps, 1) 
+	# Y_shifted = tf.nn.embedding_lookup(decoding_encoder, y_shifted_input)
+	# Y = y_input
+	Y_length = tf.placeholder(tf.int32, [batch_size])
+	 
+	# Reshape to match rnn.static_bidirectional_rnn function requirements
+	# Current data input shape: (batch_size, max_in_time, n_input)
+	# Required shape: 'timesteps' tensors list of shape (batch_size, num_input)
+	# X = tf.unstack(X, max_in_time, 1)
+	# Y = tf.unstack(Y, timesteps, 1) 
 
-    #lstm_cell = tf.nn.rnn_cell.LSTMCell(num_hidden)
-    
-    num_gpus =3
-    
-    if USE_GPU :
-        
-        cells = []
-        for i in range(encoding_layers):
-            cells.append(tf.contrib.rnn.DeviceWrapper(
-                    tf.nn.rnn_cell.LSTMCell(num_hidden),
-                    "/gpu:%d" % (encoding_layers % num_gpus)))
-        
-        lstm_fw_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
-        
-        
-        lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
-        
-    else :    
+	#lstm_cell = tf.nn.rnn_cell.LSTMCell(num_hidden)
+	
+	num_gpus =3
+	
+	if USE_GPU :
+		
+		cells = []
+		for i in range(encoding_layers):
+			cells.append(tf.contrib.rnn.DeviceWrapper(
+					tf.nn.rnn_cell.LSTMCell(num_hidden),
+					"/gpu:%d" % (encoding_layers % num_gpus)))
+		
+		lstm_fw_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
+		
+		
+		lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
+		
+	else :    
 
-        # Forward direction stacked lstm cell
-        lstm_fw_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(encoding_layers)])
-        # Backward direction stacked lstm cell
-        lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(encoding_layers)])
+		# Forward direction stacked lstm cell
+		lstm_fw_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(encoding_layers)])
+		# Backward direction stacked lstm cell
+		lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(encoding_layers)])
 
-    encoder_outputs, encoder_state = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, X, 
-            sequence_length=X_length, dtype=tf.float32)
-    encoder_outputs = tf.concat(encoder_outputs, 2)
-    # encoder_state = tf.concat(encoder_state, 2)
+	encoder_outputs, encoder_state = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, X, 
+			sequence_length=X_length, dtype=tf.float32)
+	encoder_outputs = tf.concat(encoder_outputs, 2)
+	# encoder_state = tf.concat(encoder_state, 2)
 
-    if USE_GPU :
-         cells = []
-         for i in range(decoding_layers):
-             cells.append(tf.contrib.rnn.DeviceWrapper(
-                     tf.contrib.rnn.LSTMCell(num_hidden),
-                     "/gpu:%d" % (decoding_layers % num_gpus)))
-    
-         decoder_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
-    else :    
-         decoder_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(decoding_layers)])
-    
-    
-    
-    
-    projection_layer = tf.layers.Dense(vocab_size)  ## linear ---> Wx + b  
-    attention_states = encoder_outputs
-    #Size is [batch_size, max_time, num_units]
+	if USE_GPU :
+		 cells = []
+		 for i in range(decoding_layers):
+			 cells.append(tf.contrib.rnn.DeviceWrapper(
+					 tf.contrib.rnn.LSTMCell(num_hidden),
+					 "/gpu:%d" % (decoding_layers % num_gpus)))
+	
+		 decoder_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
+	else :    
+		 decoder_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(num_hidden) for _ in range(decoding_layers)])
+	
+	
+	
+	
+	projection_layer = tf.layers.Dense(vocab_size)  ## linear ---> Wx + b  
+	attention_states = encoder_outputs
+	#Size is [batch_size, max_time, num_units]
 
-    attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(2*num_hidden, 
-        attention_states, memory_sequence_length=Y_length) ### changed to Y_length -- dont know if it makes sense but it works
+	attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(2*num_hidden, 
+		attention_states, memory_sequence_length=Y_length) ### changed to Y_length -- dont know if it makes sense but it works
 
 	# decoder_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
 	# 	attention_mechanism, attention_layer_size=2*num_hidden)
@@ -135,7 +135,7 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	
 	# initial_state = tf.zeros([batch_size, num_hidden])
 	if is_train:   
-		helper = tf.contrib.seq2seq.TrainingHelper(Y, Y_length)
+		helper = tf.contrib.seq2seq.TrainingHelper(y_input, Y_length)
 		decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell, helper, 
 			initial_state=decoder_cell.zero_state(dtype=tf.float32, batch_size=batch_size), output_layer=projection_layer)
 		output, _, output_lengths = tf.contrib.seq2seq.dynamic_decode(decoder, maximum_iterations=max_out_time)
@@ -174,48 +174,48 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	return x_input, y_input, y_shifted_input, X_length, Y_length, logits, loss_op, optimizer
  
 
-    
+	
 
 if __name__ == '__main__':
 
-    # Paper runs the model till they reach a perplexity of 1.0003.
-    # Stopping criterion can be that once it runs :P
+	# Paper runs the model till they reach a perplexity of 1.0003.
+	# Stopping criterion can be that once it runs :P
 
-    #@TODO
-    # input_data = get_input() #How do we do this?
-    # validation_data = get_input() 
-    # test_data = get_input()
+	#@TODO
+	# input_data = get_input() #How do we do this?
+	# validation_data = get_input() 
+	# test_data = get_input()
 
-    learning_rate = 0.001 # Can do Cross Validation
-    epochs = 100 # Need more?
-    batch_size = 1 #128 #@TODO Not sure if we can do batches
-    display_step = 200
+	learning_rate = 0.001 # Can do Cross Validation
+	epochs = 100 # Need more?
+	batch_size = 1 #128 #@TODO Not sure if we can do batches
+	display_step = 200
 
-    num_input = 300 # Depending on character embeddings we get on google ---> char embedding dimension
-    num_hidden = 128 # Given in paper   ### wasn't it 256 ?
-    encoding_layers = 4 #Given in paper
-    decoding_layers = 2 #Given in paper
-    max_iter = 20 #@TODO can decide
-    vocab_size = 200 #number of decoder words we choose to keep in dicitonary
-    max_in_time  = 3
-    max_out_time = 1
-    beam_width = 5 #@TODO check paper
-    start_token = 0 #@TODO define
-    end_token = 20 #@TODO define
-    
-    
-    #@TODO https://github.com/tensorflow/tensorflow/issues/3420
-    #Says more stacking is faster than bidirectional! We could try
-    #Also can try GRU cell instead of LSTM
-    num_classes =  95 + 2 #256 + 2 # Number of possible characters, 256 ASCII ---> if for 
-    # as well as start/end signals
+	num_input = 300 # Depending on character embeddings we get on google ---> char embedding dimension
+	num_hidden = 128 # Given in paper   ### wasn't it 256 ?
+	encoding_layers = 4 #Given in paper
+	decoding_layers = 2 #Given in paper
+	max_iter = 20 #@TODO can decide
+	vocab_size = 200 #number of decoder words we choose to keep in dicitonary
+	max_in_time  = 3
+	max_out_time = 1
+	beam_width = 5 #@TODO check paper
+	start_token = 0 #@TODO define
+	end_token = 20 #@TODO define
+	
+	
+	#@TODO https://github.com/tensorflow/tensorflow/issues/3420
+	#Says more stacking is faster than bidirectional! We could try
+	#Also can try GRU cell instead of LSTM
+	num_classes =  95 + 2 #256 + 2 # Number of possible characters, 256 ASCII ---> if for 
+	# as well as start/end signals
 
-    tf.reset_default_graph()
-    # Initialize the variables (i.e. assign their default value)
-    init = tf.global_variables_initializer()
+	tf.reset_default_graph()
+	# Initialize the variables (i.e. assign their default value)
+	init = tf.global_variables_initializer()
 
-    # Save checkpoints on the way
-    ###saver = tf.train.Saver() @ERROR
+	# Save checkpoints on the way
+	###saver = tf.train.Saver() @ERROR
 
 	# Paper runs the model till they reach a perplexity of 1.0003.
 	# Stopping criterion can be that once it runs :P
