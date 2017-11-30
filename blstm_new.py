@@ -56,11 +56,11 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	#embedding_encoder = tf.get_variable("embeddings", shape=embedding_matrix.shape,  \
 	#                          initializer=tf.constant_initializer(np.array(embedding_matrix)) , trainable=True)  
 	
-	x_input = tf.placeholder(tf.int32, [batch_size, max_in_time])
+	x_input = tf.placeholder(tf.int32, [None, max_in_time])
 	X = tf.nn.embedding_lookup(embedding_encoder, x_input)
-	X_length = tf.placeholder(tf.int32, [batch_size])
-	y_input = tf.placeholder(tf.float32, [batch_size, max_out_time])
-	y_shifted_input = tf.placeholder(tf.int32, [batch_size, max_out_time])
+	X_length = tf.placeholder(tf.int32, [None])
+	y_input = tf.placeholder(tf.float32, [None, max_out_time])
+	y_shifted_input = tf.placeholder(tf.int32, [None, max_out_time])
 	#Y = tf.nn.embedding_lookup(decoding_encoder, y_input) #### do we need this ###
 	# start_token = tf.nn.embedding_lookup(decoding_encoder, start_token)
 	# end_token = tf.nn.embedding_lookup(decoding_encoder, end_token)
@@ -68,7 +68,7 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 
 	# Y_shifted = tf.nn.embedding_lookup(decoding_encoder, y_shifted_input)
 	# Y = y_input
-	Y_length = tf.placeholder(tf.int32, [batch_size])
+	Y_length = tf.placeholder(tf.int32, [None])
 	 
 	# Reshape to match rnn.static_bidirectional_rnn function requirements
 	# Current data input shape: (batch_size, max_in_time, n_input)
@@ -77,7 +77,7 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	# Y = tf.unstack(Y, timesteps, 1) 
 
 	#lstm_cell = tf.nn.rnn_cell.LSTMCell(num_hidden)
-	
+	batch_size = tf.shape(X)[0]
 	num_gpus =3
 	
 	if USE_GPU :
@@ -124,7 +124,7 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	#Size is [batch_size, max_time, num_units]
 
 	attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(2*num_hidden, 
-		attention_states, memory_sequence_length=Y_length) ### changed to Y_length -- dont know if it makes sense but it works
+		attention_states, memory_sequence_length=X_length)
 
 	# decoder_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
 	# 	attention_mechanism, attention_layer_size=2*num_hidden)
@@ -185,46 +185,6 @@ if __name__ == '__main__':
 	# input_data = get_input() #How do we do this?
 	# validation_data = get_input() 
 	# test_data = get_input()
-
-	learning_rate = 0.001 # Can do Cross Validation
-	epochs = 100 # Need more?
-	batch_size = 1 #128 #@TODO Not sure if we can do batches
-	display_step = 200
-
-	num_input = 300 # Depending on character embeddings we get on google ---> char embedding dimension
-	num_hidden = 128 # Given in paper   ### wasn't it 256 ?
-	encoding_layers = 4 #Given in paper
-	decoding_layers = 2 #Given in paper
-	max_iter = 20 #@TODO can decide
-	vocab_size = 200 #number of decoder words we choose to keep in dicitonary
-	max_in_time  = 3
-	max_out_time = 1
-	beam_width = 5 #@TODO check paper
-	start_token = 0 #@TODO define
-	end_token = 20 #@TODO define
-	
-	
-	#@TODO https://github.com/tensorflow/tensorflow/issues/3420
-	#Says more stacking is faster than bidirectional! We could try
-	#Also can try GRU cell instead of LSTM
-	num_classes =  95 + 2 #256 + 2 # Number of possible characters, 256 ASCII ---> if for 
-	# as well as start/end signals
-
-	tf.reset_default_graph()
-	# Initialize the variables (i.e. assign their default value)
-	init = tf.global_variables_initializer()
-
-	# Save checkpoints on the way
-	###saver = tf.train.Saver() @ERROR
-
-	# Paper runs the model till they reach a perplexity of 1.0003.
-	# Stopping criterion can be that once it runs :P
-
-	#@TODO
-	# input_data = get_input() #How do we do this?
-	# validation_data = get_input() 
-	# test_data = get_input()
-
 	learning_rate = 0.001 # Can do Cross Validation
 	epochs = 100 # Need more?
 	batch_size = 1 #128 #@TODO Not sure if we can do batches
