@@ -7,7 +7,7 @@ Created on Sat Nov 25 17:35:36 2017
 """
 
 import pynini
-
+from pynini import *
 #money
 
 
@@ -22,7 +22,7 @@ vowel = pynini.union(back_vowel, neutral_vowel, front_vowel)
 archiphoneme = pynini.union("A", "I", "E", "O", "U")
 consonant = pynini.union("b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n",
                          "p", "q", "r", "s", "t", "v", "w", "x", "z")
-sigma_star = pynini.union(vowel, consonant, archiphoneme).closure()
+sigma_star = pynini.union(vowel, consonant, archiphoneme).closure().optimize()
 
 adessive = "llA"
 intervener = pynini.union(consonant, neutral_vowel).closure()
@@ -49,10 +49,10 @@ singular_map = pynini.union(
     # the last argument -1 is a "weight" that gives this analysis
     # a higher priority, if it matches the input.
     sigma_star + pynini.transducer("ches", "ch", -1),
-    # Any sequence of bytes ending in "s" strips the "s".
+    # Any sequence of bytes ending in "s" strips the "s"
     sigma_star + pynini.transducer("s", ""))
 
-
+singular_map =  pynini.transducer("pence", "penny")
 rc = pynini.union(".", ",", "!", ";", "?", " ", "[EOS]")
 
 singularize = pynini.cdrewrite(singular_map, " 1 ",  rc , sigma_star)
@@ -63,4 +63,17 @@ def sg(x):
   
   
 #sg("The current temperature in New York is 1 degrees")  
-sg("That costs just 1 pence")  
+#ofst = sg("That costs just 1 pence")  
+
+
+root = acceptor("[Number] [Measure]")
+singular_numbers = transducer("1", "one")
+singular_measurements = string_map((("ft", "foot"), ("in", "inch"),
+                                        ("cm", "centimeter"), ("m", "meter"),
+                                        ("kg", "kilogram")))
+singular = replace(root, Number=singular_numbers,
+                       Measure=singular_measurements,
+                       call_arc_labeling="neither",
+                       return_arc_labeling="neither")
+
+print optimize(project("1 ft" * singular, True))
