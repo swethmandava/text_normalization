@@ -1,6 +1,8 @@
 import tensorflow as tf
 from tensorflow.contrib import rnn
 import numpy as np
+import math
+import matplotlib.pyplot as plt
 
 
 path = ''
@@ -176,9 +178,7 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	
 		 decoder_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
 	else :    
-		 decoder_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(2*num_hidden) for _ in range(decoding_layers)])
-	
-	print "ENCODER DONE"	
+		 decoder_cell = tf.nn.rnn_cell.MultiRNNCell([tf.nn.rnn_cell.LSTMCell(2*num_hidden) for _ in range(decoding_layers)])	
 	
 	
 	projection_layer = tf.layers.Dense(vocab_size)  ## linear ---> Wx + b  
@@ -196,7 +196,6 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	decoder_cell = tf.contrib.rnn.OutputProjectionWrapper(attn_cell, vocab_size)
 	
 	if is_train:   
-		print "DECODING"
 		helper = tf.contrib.seq2seq.TrainingHelper(Y, Y_length)
 		decoder = tf.contrib.seq2seq.BasicDecoder(decoder_cell, helper, 
 			# initial_state=decoder_cell.zero_state(dtype=tf.float32, batch_size=batch_size).clone(cell_state=encoder_state), output_layer=projection_layer)
@@ -251,7 +250,7 @@ if __name__ == '__main__':
 	learning_rate = 0.001 # Can do Cross Validation
 	epochs = 100 # Need more?
 	batch_size = 1 #128 #@TODO Not sure if we can do batches
-	display_step = 200
+	display_step = 20
 
 	num_input = 300 # Depending on character embeddings we get on google ---> char embedding dimension
 	num_hidden = 128 # Given in paper   ### wasn't it 256 ?
@@ -276,34 +275,39 @@ if __name__ == '__main__':
 	# Initialize the variables (i.e. assign their default value)
 	# init = tf.global_variables_initializer()
 	# init = tf.initialize_all_variables()
-
-	# Save checkpoints on the way
-	###saver = tf.train.Saver() @ERROR
-
 	
 	train_x , len_x , train_y , len_y = create_data()
 	# train_x , len_x , train_y , len_y = process_data(train_x , len_x , train_y , len_y , batch_size)   
 	# num_batches, _, _ = tf.shape(train_x)  
 	num_batches = train_x.shape[0]//batch_size
-	
+	cross_entropy_train = []
+	perplexity_train = []
+
+	cross_entropy_valid = []
+	perplexity_valid = []
+
+	best_loss = np.inf
 	
 	# Start training
 	with tf.Session() as sess:
-		global is_train
-		is_train = True
 
 		print "TRAINING"
 		x_input, y_input, y_shifted_input, X_length, Y_length, logits, loss_op, optimizer = \
 		BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size , \
 			  decoding_layers, max_in_time, max_out_time, beam_width, start_token, end_token)
+		# Save checkpoints on the way
+		saver = tf.train.Saver()
+
 		# Run the initializer
-		# sess.run(init)
 		initialize_all_variables()
-		print sess.run(tf.report_uninitialized_variables())
-		print "KILL ME"
-		# writer = tf.summary.FileWriter("logs/", graph=tf.get_default_graph())
-		print "INITIALIZED"
+		# print sess.run(tf.report_uninitialized_variables())
+
 		for epoch in range(1, epochs+1):
+			batch_cross_entropy_loss = 0.0
+			global is_train
+			is_train = True
+			# saver.restore(sess, "results/model_iter_100.cpkt")
+
 			for step in range(num_batches): 
 
 				batch_x = train_x[step * batch_size: (step+1)*batch_size, :]
@@ -313,33 +317,69 @@ if __name__ == '__main__':
 
 				#Define input_data of size 1 x timesteps x num_input : @TODO Can we do batches?
 				# Define Y as timesteps_output x num_input. Include start and end tags for all
-				# I "think" only end tags will also do if we don't have to learn embeddings.
 
 				batch_y = np.hstack((start_token * np.ones((batch_y_shifted.shape[0], 1)), batch_y_shifted[:, :-1]))
-				# print batch_y, batch_y_shifted
-				# batch_y = np.copy(batch_y)
+
 				feed_dict = {x_input:batch_x, X_length:x_length, y_input:batch_y, Y_length:y_length,
 							 y_shifted_input:batch_y_shifted}
-				#Run and train
-				# add_summary = sess.run(writer)
-				# writer.close()
+
 				batch_loss, _ = sess.run([loss_op, optimizer], feed_dict)
-				if step % display_step == 0 or step == 1:
-					print("Step " + str(step) + ", Minibatch Loss= " + \
-						  "{:.4f}".format(batch_loss))
+				batch_cross_entropy_loss = batch_cross_entropy_loss + batch_loss
+
+			if epoch % display_step == 0:
+				filename = "results/model_iter_"+str(epoch)+".cpkt"
+				saver.save(sess, filename)
+				batch_cross_entropy_loss = batch_cross_entropy_loss / num_batches
+
+				cross_entropy_train.append(batch_cross_entropy_loss)
+				perplexity_train.append(math.exp(batch_cross_entropy_loss))
+
+				#Validation
+
+				global is_train
+				is_train = False
+
+				valid_x, valid_x_length, valid_y_shifted, valid_y_length = create_data()
+				valid_y = np.hstack((start_token * np.ones((valid_y_shifted.shape[0], 1)), valid_y_shifted[:, :-1]))
+
+				feed_dict = {x_input:valid_x, X_length:valid_x_length, y_input:valid_y, 
+							Y_length:valid_y_length, y_shifted_input:valid_y_shifted}
+				predicted, valid_loss = sess.run([logits, loss_op], feed_dict)
+
+				cross_entropy_valid.append(valid_loss)
+				perplexity_valid.append(math.exp(valid_loss))
+
+				if valid_loss < best_loss:
+					best_loss = valid_loss
+					saver.save(sess, 'results/best_model.cpkt')
+
+				print("Epoch " + str(epoch) + ", Train Loss= " + \
+					  "{:.4f}".format(batch_cross_entropy_loss) + \
+					  ", Validation Loss= " + "{:.4f}".format(valid_loss))
+
+				np.save("results/cross_entropy_train", cross_entropy_train)
+				np.save("results/cross_entropy_valid", cross_entropy_valid)
+				np.save("results/perplexity_train", perplexity_train)
+				np.save("results/perplexity_valid", perplexity_valid)
 
 		print("Optimization Finished!")
 
-		#Validation
+		plt.figure(0)
+		plt.plot(range(epochs//display_step), cross_entropy_valid, 'r', label="validation")
+		plt.plot(range(epochs//display_step), cross_entropy_train, 'b', label="train")
+		plt.legend()
+		plt.ylabel('Cross Entropy Loss')
+		plt.xlabel('Epochs')
+		filename = "results/cross_entropy.png"
+		plt.savefig(filename)
+		plt.close()
 
-		global is_train
-		is_train = False
-		# valid_x, valid_x_length, valid_y, valid_y_length = validation_data
-		valid_x, valid_x_length, valid_y_shifted, valid_y_length = create_data()
-		valid_y = np.hstack((start_token * np.ones((valid_y_shifted.shape[0], 1)), valid_y_shifted[:, :-1]))
-
-		feed_dict = {x_input:valid_x, X_length:valid_x_length, y_input:valid_y, 
-					Y_length:y_length, y_shifted_input:valid_y_shifted}
-		logits, loss_op = sess.run([logits, loss_op], feed_dict)
-
-		print "Validation loss is:", loss_op
+		plt.figure(1)
+		plt.plot(range(epochs//display_step), perplexity_valid, 'r', label="validation")
+		plt.plot(range(epochs//display_step), perplexity_train, 'b', label="train")
+		plt.legend()
+		plt.ylabel('Perplexity')
+		plt.xlabel('Epochs')
+		filename = "results/Perplexity.png"
+		plt.savefig(filename)
+		plt.close()
