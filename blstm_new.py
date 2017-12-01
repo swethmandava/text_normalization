@@ -2,8 +2,9 @@ import tensorflow as tf
 from tensorflow.contrib import rnn
 import numpy as np
 import math
+import matplotlib as mlp
+mlp.use("Agg")
 import matplotlib.pyplot as plt
-
 
 path = ''
 data_exists = 1
