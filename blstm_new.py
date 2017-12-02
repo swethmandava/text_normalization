@@ -76,7 +76,7 @@ def process_data(train_x ,len_x ,train_y , len_y, batch_size):
 	 return train_x , len_x , train_y , len_y
  
 	
-def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
+def BiRNN(num_hidden, num_classes, num_input, learning_rate, encoding_layers, vocab_size,
 	decoding_layers, max_in_time, max_out_time, beam_width, start_token,
 	end_token):
 
@@ -85,7 +85,7 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	#max_in_time --> encoder time steps
 	#max_out_time --> decoder time steps
 	
-	embedding_encoder = tf.Variable(tf.random_normal((num_classes,300 )))
+	embedding_encoder = tf.Variable(tf.random_normal((num_classes, num_input)))
 	decoding_encoder = tf.one_hot(range(vocab_size), vocab_size, dtype=tf.float32) 
 	
 	x_input = tf.placeholder(tf.int32, [None, max_in_time])
@@ -127,22 +127,24 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell, X, sequence_length=X_length, dtype=tf.float32)
 	
 	encoder_outputs = tf.concat((encoder_fw_outputs, encoder_bw_outputs), 1)
-	if isinstance(encoder_fw_state, rnn.LSTMStateTuple):  # LstmCell
-		state_c = tf.concat(
-			(encoder_fw_state.c, encoder_bw_state.c), 1)
-		state_h = tf.concat(
-			(encoder_fw_state.h, encoder_bw_state.h), 1)
-		encoder_state = rnn.LSTMStateTuple(c=state_c, h=state_h)
-	elif isinstance(encoder_fw_state, tuple) \
-			and isinstance(encoder_fw_state[0], rnn.LSTMStateTuple):  # MultiLstmCell
-		encoder_state = tuple(map(
-			lambda fw_state, bw_state: rnn.LSTMStateTuple(
-				c=tf.concat((fw_state.c, bw_state.c), 1),
-				h=tf.concat((fw_state.h, bw_state.h), 1)),
-			encoder_fw_state, encoder_bw_state))
-	else:
-		encoder_state = tf.concat(
-			(encoder_fw_state, encoder_bw_state), 1)
+
+	# UNcomment if we need state and modify basic decoder accordingly
+	# if isinstance(encoder_fw_state, rnn.LSTMStateTuple):  # LstmCell
+	# 	state_c = tf.concat(
+	# 		(encoder_fw_state.c, encoder_bw_state.c), 1)
+	# 	state_h = tf.concat(
+	# 		(encoder_fw_state.h, encoder_bw_state.h), 1)
+	# 	encoder_state = rnn.LSTMStateTuple(c=state_c, h=state_h)
+	# elif isinstance(encoder_fw_state, tuple) \
+	# 		and isinstance(encoder_fw_state[0], rnn.LSTMStateTuple):  # MultiLstmCell
+	# 	encoder_state = tuple(map(
+	# 		lambda fw_state, bw_state: rnn.LSTMStateTuple(
+	# 			c=tf.concat((fw_state.c, bw_state.c), 1),
+	# 			h=tf.concat((fw_state.h, bw_state.h), 1)),
+	# 		encoder_fw_state, encoder_bw_state))
+	# else:
+	# 	encoder_state = tf.concat(
+	# 		(encoder_fw_state, encoder_bw_state), 1)
 
 	if USE_GPU :
 		 cells = []
@@ -160,8 +162,10 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	attention_states = encoder_outputs
 	#Size is [batch_size, max_time, num_units]
 
+	#@TODO Please verify the correctness of memory sequence length
+	# My worry is that since we are concatinaitng forward and backward, the length might not be accurate
 	attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(2*num_hidden, 
-		attention_states)#, memory_sequence_length=X_length)
+		attention_states, memory_sequence_length=X_length)
 	
 	attn_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
 		attention_mechanism, attention_layer_size=2*num_hidden)
@@ -178,11 +182,11 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	else: # Eval
 		decoder = tf.contrib.seq2seq.BeamSearchDecoder(
 		cell=decoder_cell,
-		# embedding = decoding_encoder,
+		embedding = decoding_encoder,
 		start_tokens= [start_token]*batch_size,
 		end_token= end_token,
 		initial_state=decoder_cell.zero_state(dtype=tf.float32, batch_size=batch_size),
-		beam_width=1, #@TODO increase beam_width
+		beam_width=1,
 		output_layer=projection_layer)
 
 		output, _, output_lengths = tf.contrib.seq2seq.dynamic_decode(decoder, 
@@ -209,9 +213,8 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 if __name__ == '__main__':
 
 	# Paper runs the model till they reach a perplexity of 1.0003.
-	# Stopping criterion can be that once it runs :P
 
-	#@TODO
+	#@TODO @Devika
 	# input_data = get_input() #How do we do this?
 	# validation_data = get_input() 
 	# test_data = get_input()
@@ -221,23 +224,20 @@ if __name__ == '__main__':
 	display_step = 20
 
 	num_input = 300 # Depending on character embeddings we get on google ---> char embedding dimension
-	num_hidden = 128 # Given in paper   ### wasn't it 256 ?
+	num_hidden = 256 # Given in paper  @Eti Verify
 	encoding_layers = 4 #Given in paper
 	decoding_layers = 2 #Given in paper
-	max_iter = 20 #@TODO can decide
-	vocab_size = 200 #number of decoder words we choose to keep in dicitonary
-	max_in_time  = 3
-	max_out_time = 1
-	beam_width = 5 #@TODO check paper
-	start_token = 0 #@TODO define
-	end_token = 20 #@TODO define
+	vocab_size = 200 #number of decoder words we choose to keep in dicitonary @ETi @Devika We had 8000 in DL. What's appropriate here?
+	max_in_time  = 3 # @Eti @Devika
+	max_out_time = 1 # @Eti @Devika
+	start_token = 0 #@TODO define @Eti @Devika
+	end_token = 20 #@TODO define @Eti @Devika
 	
 	
 	#@TODO https://github.com/tensorflow/tensorflow/issues/3420
 	#Says more stacking is faster than bidirectional! We could try
 	#Also can try GRU cell instead of LSTM
-	num_classes =  95 + 2 #256 + 2 # Number of possible characters, 256 ASCII ---> if for 
-	# as well as start/end signals
+	num_classes =  232 #@Devika => Characters = 256 Ascii - upper case + norm from my understanding. 
 
 	tf.reset_default_graph()
 	# Initialize the variables (i.e. assign their default value)
@@ -261,8 +261,9 @@ if __name__ == '__main__':
 
 		print "TRAINING"
 		x_input, y_input, y_shifted_input, X_length, Y_length, logits, loss_op, optimizer = \
-		BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size , \
+		BiRNN(num_hidden, num_classes, num_input, learning_rate, encoding_layers, vocab_size , \
 			  decoding_layers, max_in_time, max_out_time, beam_width, start_token, end_token)
+		
 		# Save checkpoints on the way
 		saver = tf.train.Saver()
 
