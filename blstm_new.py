@@ -58,22 +58,10 @@ def initialize_all_variables(sess=None):
 		ge.reroute.remove_control_inputs(var_cache, [safe_initializers[var_name]]) 
 
 def create_data() :
-   
-	#load X , Y , len_x , len_y
-	#train_x =   
-	#train_y =
-	# len_x =
-	#len_y =
 	train_x = np.array([[1,2,3] , [4,5,6]])
 	train_y = np.array([[1],[2]])
 	len_x = np.array([3,3])
-	len_y = np.array([1,1])
-	#converting everything to tensors 
-	# train_x = tf.convert_to_tensor(train_x, np.float32)
-	# train_y = tf.convert_to_tensor(train_y, np.float32)
-	# len_x = tf.convert_to_tensor(len_x, np.float32)
-	# len_y = tf.convert_to_tensor(len_y, np.float32)
-	#X = Dataset.from_tensor_slices((train_x, train_y)  
+	len_y = np.array([1,1]) 
 	return train_x , len_x , train_y , len_y
 
 
@@ -96,36 +84,22 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	# Inputs
 	#max_in_time --> encoder time steps
 	#max_out_time --> decoder time steps
-	#embedding_encoder --> embedding matrix
 	
-	embedding_encoder = tf.random_normal((num_classes,300 ))
-	#decoding_encoder = tf.one_hot(vocab_size, vocab_size, dtype=tf.float32)
-	decoding_encoder = tf.random_normal(( vocab_size, vocab_size))
-	#@TODO Gotta define encodings
-	#embedding_encoder = tf.get_variable("embeddings", shape=embedding_matrix.shape,  \
-	#                          initializer=tf.constant_initializer(np.array(embedding_matrix)) , trainable=True)  
+	embedding_encoder = tf.Variable(tf.random_normal((num_classes,300 )))
+	decoding_encoder = tf.one_hot(range(vocab_size), vocab_size, dtype=tf.float32) 
 	
 	x_input = tf.placeholder(tf.int32, [None, max_in_time])
 	X = tf.nn.embedding_lookup(embedding_encoder, x_input)
 	X_length = tf.placeholder(tf.int32, [None])
 	y_input = tf.placeholder(tf.int32, [None, max_out_time])
 	y_shifted_input = tf.placeholder(tf.int32, [None, max_out_time])
-	Y = tf.nn.embedding_lookup(decoding_encoder, y_input) #### do we need this ###
-	# start_token = tf.nn.embedding_lookup(decoding_encoder, start_token)
-	# end_token = tf.nn.embedding_lookup(decoding_encoder, end_token)
-	# print start_token
 
-	# Y_shifted = tf.nn.embedding_lookup(decoding_encoder, y_shifted_input)
-	# Y = y_input
+	Y = tf.nn.embedding_lookup(decoding_encoder, y_input)
+	start_token = tf.nn.embedding_lookup(decoding_encoder, start_token)
+	end_token = tf.nn.embedding_lookup(decoding_encoder, end_token)
+
 	Y_length = tf.placeholder(tf.int32, [None])
 	 
-	# Reshape to match rnn.static_bidirectional_rnn function requirements
-	# Current data input shape: (batch_size, max_in_time, n_input)
-	# Required shape: 'timesteps' tensors list of shape (batch_size, num_input)
-	# X = tf.unstack(X, max_in_time, 1)
-	# Y = tf.unstack(Y, timesteps, 1) 
-
-	#lstm_cell = tf.nn.rnn_cell.LSTMCell(num_hidden)
 	batch_size = tf.shape(X)[0]
 	num_gpus =3
 	
@@ -187,13 +161,11 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 	#Size is [batch_size, max_time, num_units]
 
 	attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(2*num_hidden, 
-		attention_states) #, memory_sequence_length=X_length)
-
-	# decoder_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
-	# 	attention_mechanism, attention_layer_size=2*num_hidden)
+		attention_states)#, memory_sequence_length=X_length)
 	
 	attn_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
 		attention_mechanism, attention_layer_size=2*num_hidden)
+
 	decoder_cell = tf.contrib.rnn.OutputProjectionWrapper(attn_cell, vocab_size)
 	
 	if is_train:   
@@ -217,26 +189,21 @@ def BiRNN(num_hidden, num_classes, learning_rate, encoding_layers, vocab_size,
 			maximum_iterations=max_out_time)
 		#@TODO Length penalty weight gotta decide
 
-	# sample_id = output.predicted
 	logits = output.rnn_output
 
-	# @TODO Know what this Means? Y is decoder_inputs. Assuming Y_shifted as decoder_outputs
 	# decoder_inputs [max_decoder_time, batch_size]: target input words.
 	# decoder_outputs [max_decoder_time, batch_size]: target output words, these are decoder_inputs shifted to 
 	# the left by one time step with an end-of-sentence tag appended on the right.
 	
-	# Cross entropy loss
-	# print y_shifted_input, logits
 	crossent = tf.nn.sparse_softmax_cross_entropy_with_logits( \
-		labels=y_shifted_input, logits=logits) ### i think it should be just Y 
+		labels=y_shifted_input, logits=logits)
 	target_weights = tf.sequence_mask(output_lengths, max_out_time, dtype=logits.dtype)
 	loss_op = (tf.reduce_sum(crossent * target_weights) /
 		tf.cast(batch_size, tf.float32))
+
 	#Automatically updates variables
 	optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(loss_op)
 	return x_input, y_input, y_shifted_input, X_length, Y_length, logits, loss_op, optimizer
- 
-
 	
 
 if __name__ == '__main__':
