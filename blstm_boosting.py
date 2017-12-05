@@ -61,6 +61,7 @@ def initialize_all_variables(sess=None):
 		ge.reroute.remove_control_inputs(var_cache, [safe_initializers[var_name]]) 
 
 def create_dictionary(file,btch,max_len):
+
 	# Create a character lookup table
 	extended_ascii = [chr(i) for i in xrange(256)]
 
@@ -110,22 +111,33 @@ def create_dictionary(file,btch,max_len):
 	word_index['\x00'] = cnt
 	cnt = cnt + 1
 	word_index['END'] = cnt
+
 	return word_index
 
 	
-def BiRNN(num_hidden, num_classes, num_input, learning_rate, encoding_layers, vocab_size,
+def BiRNN(num_hidden, num_classes, num_input, num_groups, learning_rate, encoding_layers, vocab_size,
 	decoding_layers, start_token, end_token):
+
+	
+	# Inputs
+	#max_in_time --> encoder time steps
+	#max_out_time --> decoder time steps
 	
 	embedding_encoder = tf.Variable(tf.random_normal((num_classes, num_input)))
+	class_encoder = tf.Variable(tf.random_normal((num_groups, num_hidden)))
 	decoding_encoder = tf.one_hot(range(vocab_size), vocab_size, dtype=tf.float32) 
 	
 	x_input = tf.placeholder(tf.int32, [None, None])
-	X = tf.nn.embedding_lookup(embedding_encoder, x_input)
 	X_length = tf.placeholder(tf.int32, [None])
 	y_input = tf.placeholder(tf.int32, [None, None])
 	y_shifted_input = tf.placeholder(tf.int32, [None, None])
+	groups = tf.placeholder(tf.int32, [None])
 
+	X = tf.nn.embedding_lookup(embedding_encoder, x_input)
 	Y = tf.nn.embedding_lookup(decoding_encoder, y_input)
+	#Makes batch size x num hidden to batch size x 1 x num_hidden
+	#Appropriate for attention
+	groups_embedding = tf.expand_dims(tf.nn.embedding_lookup(class_encoder, groups), 1)
 
 	start_token = tf.nn.embedding_lookup(decoding_encoder, start_token)
 	end_token = tf.nn.embedding_lookup(decoding_encoder, end_token)
@@ -146,9 +158,16 @@ def BiRNN(num_hidden, num_classes, num_input, learning_rate, encoding_layers, vo
 					"/gpu:%d" % (2))) #     encoding_layers % num_gpus)))
 		
 		lstm_fw_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
-		
+		attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(num_hidden, 
+			groups_embedding)
+		lstm_fw_cell = tf.contrib.seq2seq.AttentionWrapper(lstm_fw_cell, 
+			attention_mechanism, attention_layer_size=num_hidden)		
 		
 		lstm_bw_cell = tf.nn.rnn_cell.MultiRNNCell(cells)
+		attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(num_hidden, 
+			groups_embedding)
+		lstm_bw_cell = tf.contrib.seq2seq.AttentionWrapper(decoder_cell, 
+			attention_mechanism, attention_layer_size=2*num_hidden)
 		
 	else :    
 
@@ -197,6 +216,8 @@ def BiRNN(num_hidden, num_classes, num_input, learning_rate, encoding_layers, vo
 	attention_states = encoder_outputs
 	#Size is [batch_size, max_time, num_units]
 
+	#@TODO Please verify the correctness of memory sequence length
+	# My worry is that since we are concatinaitng forward and backward, the length might not be accurate
 	attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(2*num_hidden, 
 		attention_states, memory_sequence_length=X_length)
 	
@@ -226,19 +247,26 @@ def BiRNN(num_hidden, num_classes, num_input, learning_rate, encoding_layers, vo
 
 		output, _, output_lengths = tf.contrib.seq2seq.dynamic_decode(decoder,
 			maximum_iterations=max_out_time)
+		#@TODO Length penalty weight gotta decide
 
 	logits = output.rnn_output
+	check = [tf.shape(Y), tf.shape(logits), tf.shape(y_shifted_input), tf.shape(Y_length)]
 
 	# decoder_inputs [max_decoder_time, batch_size]: target input words.
 	# decoder_outputs [max_decoder_time, batch_size]: target output words, these are decoder_inputs shifted to 
 	# the left by one time step with an end-of-sentence tag appended on the right.
 	masks = tf.sequence_mask(Y_length, max_out_time, dtype=tf.float32, name='masks')
 	loss_op = tf.contrib.seq2seq.sequence_loss(logits, y_shifted_input, masks)
+	# crossent = tf.nn.sparse_softmax_cross_entropy_with_logits( \
+	# 	labels=y_shifted_input, logits=logits)
+	# target_weights = tf.sequence_mask(output_lengths, max_out_time, dtype=logits.dtype)
+	# loss_op = (tf.reduce_sum(crossent * target_weights) /
+	# 	tf.cast(batch_size, tf.float32))
 
 	#Automatically updates variables
 	optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(loss_op)
-	return x_input, y_input, y_shifted_input, X_length, Y_length, logits, loss_op, optimizer
-	
+	return x_input, y_input, y_shifted_input, X_length, Y_length, groups, logits, loss_op, optimizer, check
+
 
 if __name__ == '__main__':
 
@@ -251,6 +279,7 @@ if __name__ == '__main__':
 	num_classes =  231 #Characters = 256 Ascii - upper case + norm from my understanding.
 	num_input = 300 # Character Embedding feature size
 	num_hidden = 256 # Given in paper
+	num_groups = 5 #Defined in dataset
 	encoding_layers = 4 #Given in paper
 	decoding_layers = 2 #Given in paper
 	vocab_size = 3644 #number of decoder words we choose to keep in dicitonary
@@ -260,8 +289,8 @@ if __name__ == '__main__':
 
 	#Cross Validate
 	learning_rate = 0.0001
-	epochs = 1 #500
-	display_step = 1 #20
+	epochs = 500
+	display_step = 20
 	
 	#@TODO https://github.com/tensorflow/tensorflow/issues/3420
 	#Says more stacking is faster than bidirectional! We could try
@@ -269,7 +298,7 @@ if __name__ == '__main__':
 
 	tf.reset_default_graph()
 
-	num_batches = 3 #154970
+	num_batches = 154970
 	cross_entropy_train = []
 	perplexity_train = []
 	cross_entropy_valid = []
@@ -280,8 +309,8 @@ if __name__ == '__main__':
 	with tf.Session() as sess:
 
 		print "Begin Training"
-		x_input, y_input, y_shifted_input, X_length, Y_length, logits, loss_op, optimizer = \
-		BiRNN(num_hidden, num_classes, num_input, learning_rate, encoding_layers, vocab_size , \
+		x_input, y_input, y_shifted_input, X_length, Y_length, groups, logits, loss_op, optimizer, check = \
+		BiRNN(num_hidden, num_classes, num_input, num_groups, learning_rate, encoding_layers, vocab_size , \
 			  decoding_layers, start_token, end_token)
 		
 		# Save checkpoints on the way
@@ -297,22 +326,24 @@ if __name__ == '__main__':
 			is_train = True
 			# saver.restore(sess, "results/model_iter_100.cpkt")
 			for step in range( 1 , num_batches+1):  
-				data = np.load('data/file_' + str(step) + '.npy').item()
+				data = np.load('data1/file_' + str(step) + '.npy').item()
 				batch_x = data['batch_X']
 				batch_y_shifted = data['batch_Y']
 				x_length = data['X_length']
 				y_length = data['Y_length']
 				max_x = data['max_in']
 				max_y = data['max_out']
+				batch_groups = data['groups']
 
 				# batch_x => batch_size x max_x x num_input
 				# batch_y => batch_size x max_y
 				# x_length => batch_size
 				# y_length => batch_size
+				# groups => batch_size
 
 				batch_y = np.hstack((start_token * np.ones((batch_y_shifted.shape[0], 1)), batch_y_shifted[:, :-1]))
 				feed_dict = {x_input:batch_x, X_length:x_length, y_input:batch_y, Y_length:y_length,
-							 y_shifted_input:batch_y_shifted}
+							 y_shifted_input:batch_y_shifted, groups:batch_groups}
 				batch_loss, _ = sess.run([loss_op, optimizer], feed_dict)
 				batch_cross_entropy_loss = batch_cross_entropy_loss + batch_loss
 
@@ -331,17 +362,20 @@ if __name__ == '__main__':
 				global is_train
 				is_train = False
 
-				data = np.load('data/valid.npy').item()  
+				data = np.load('data1/valid.npy').item()  
 				valid_x = data['batch_X']
 				valid_y_shifted = data['batch_Y']
 				valid_x_length = data['X_length']
 				valid_y_length = data['Y_length'] 
 				max_x = data['max_in']
 				max_y = data['max_out']
+				batch_groups = data['groups']
+
 
 				valid_y = np.hstack((start_token * np.ones((valid_y_shifted.shape[0], 1)), valid_y_shifted[:, :-1]))
+
 				feed_dict = {x_input:valid_x, X_length:valid_x_length, y_input:valid_y, 
-							Y_length:valid_y_length, y_shifted_input:valid_y_shifted}
+							Y_length:valid_y_length, y_shifted_input:valid_y_shifted, groups:batch_groups}
 				predicted, valid_loss = sess.run([logits, loss_op], feed_dict)
 
 				cross_entropy_valid.append(valid_loss)
