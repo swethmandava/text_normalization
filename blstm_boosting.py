@@ -250,7 +250,6 @@ def BiRNN(num_hidden, num_classes, num_input, num_groups, learning_rate, encodin
 		#@TODO Length penalty weight gotta decide
 
 	logits = output.rnn_output
-	check = [tf.shape(Y), tf.shape(logits), tf.shape(y_shifted_input), tf.shape(Y_length)]
 
 	# decoder_inputs [max_decoder_time, batch_size]: target input words.
 	# decoder_outputs [max_decoder_time, batch_size]: target output words, these are decoder_inputs shifted to 
@@ -265,8 +264,7 @@ def BiRNN(num_hidden, num_classes, num_input, num_groups, learning_rate, encodin
 
 	#Automatically updates variables
 	optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(loss_op)
-	return x_input, y_input, y_shifted_input, X_length, Y_length, groups, logits, loss_op, optimizer, check
-
+	return x_input, y_input, y_shifted_input, X_length, Y_length, groups, logits, loss_op, optimizer
 
 if __name__ == '__main__':
 
@@ -275,30 +273,16 @@ if __name__ == '__main__':
 	# By Richard Sproat and Navdeep Jaitly
 	# # Paper runs the model till they reach a perplexity of 1.0003.
 	
-	#Define Necessary Parameters
-	num_classes =  231 #Characters = 256 Ascii - upper case + norm from my understanding.
-	num_input = 300 # Character Embedding feature size
-	num_hidden = 256 # Given in paper
-	num_groups = 5 #Defined in dataset
-	encoding_layers = 4 #Given in paper
-	decoding_layers = 2 #Given in paper
-	vocab_size = 3644 #number of decoder words we choose to keep in dicitonary
-	start_token = vocab_size - 1
-	end_token =  vocab_size - 2 #User defined
-	beam_width = 1 
+	# Load configuration Parameters
+	with open("config.yaml") as stream:
+		params = yaml.load(stream)
 
-	#Cross Validate
-	learning_rate = 0.0001
-	epochs = 500
-	display_step = 20
-	
 	#@TODO https://github.com/tensorflow/tensorflow/issues/3420
 	#Says more stacking is faster than bidirectional! We could try
 	#Also can try GRU cell instead of LSTM 
 
 	tf.reset_default_graph()
 
-	num_batches = 154970
 	cross_entropy_train = []
 	perplexity_train = []
 	cross_entropy_valid = []
@@ -310,8 +294,10 @@ if __name__ == '__main__':
 
 		print "Begin Training"
 		x_input, y_input, y_shifted_input, X_length, Y_length, groups, logits, loss_op, optimizer, check = \
-		BiRNN(num_hidden, num_classes, num_input, num_groups, learning_rate, encoding_layers, vocab_size , \
-			  decoding_layers, start_token, end_token)
+		BiRNN(params["num_hidden"], params["num_classes"], params["num_input"], params["num_groups"], \
+			params["learning_rate"], params["encoding_layers"], params["vocab_size"], \
+			params["decoding_layers"], params["start_token"], params["end_token"])
+
 		
 		# Save checkpoints on the way
 		saver = tf.train.Saver()
@@ -320,13 +306,13 @@ if __name__ == '__main__':
 		initialize_all_variables()
 		# print sess.run(tf.report_uninitialized_variables())
 
-		for epoch in range(1, epochs+1):
+		for epoch in range(1, params["epochs"]+1):
 			batch_cross_entropy_loss = 0.0
 			global is_train
 			is_train = True
-			# saver.restore(sess, "results/model_iter_100.cpkt")
-			for step in range( 1 , num_batches+1):  
-				data = np.load('data1/file_' + str(step) + '.npy').item()
+			# saver.restore(sess, "results_model2/model_iter_100.cpkt")
+			for step in range( 1 , params["num_train_batches"]+1):  
+				data = np.load('data_model2/file_' + str(step) + '.npy').item()
 				batch_x = data['batch_X']
 				batch_y_shifted = data['batch_Y']
 				x_length = data['X_length']
@@ -341,19 +327,19 @@ if __name__ == '__main__':
 				# y_length => batch_size
 				# groups => batch_size
 
-				batch_y = np.hstack((start_token * np.ones((batch_y_shifted.shape[0], 1)), batch_y_shifted[:, :-1]))
+				batch_y = np.hstack((params["start_token"] * np.ones((batch_y_shifted.shape[0], 1)), batch_y_shifted[:, :-1]))
 				feed_dict = {x_input:batch_x, X_length:x_length, y_input:batch_y, Y_length:y_length,
 							 y_shifted_input:batch_y_shifted, groups:batch_groups}
 				batch_loss, _ = sess.run([loss_op, optimizer], feed_dict)
 				batch_cross_entropy_loss = batch_cross_entropy_loss + batch_loss
 
 
-			batch_cross_entropy_loss = batch_cross_entropy_loss / num_batches
+			batch_cross_entropy_loss = batch_cross_entropy_loss / params["num_train_batches"]
 			print "Epoch %d Cross Entropy Error %f Perplexity Error %f" %(epoch,
 				batch_cross_entropy_loss, math.exp(batch_cross_entropy_loss))
 
-			if epoch % display_step == 0:
-				filename = "results/model_iter_"+str(epoch)+".cpkt"
+			if epoch % params["display_step"] == 0:
+				filename = "results_model2/model_iter_"+str(epoch)+".cpkt"
 				saver.save(sess, filename)
 				cross_entropy_train.append(batch_cross_entropy_loss)
 				perplexity_train.append(math.exp(batch_cross_entropy_loss))
@@ -362,56 +348,60 @@ if __name__ == '__main__':
 				global is_train
 				is_train = False
 
-				data = np.load('data1/valid.npy').item()  
-				valid_x = data['batch_X']
-				valid_y_shifted = data['batch_Y']
-				valid_x_length = data['X_length']
-				valid_y_length = data['Y_length'] 
-				max_x = data['max_in']
-				max_y = data['max_out']
-				batch_groups = data['groups']
+				valid_loss = 0.0
+				for step in range(1, params["num_valid_batches"]+1):
+					data = np.load('data_model2/valid_'+str(step)+'.npy').item() 
+					valid_x = data['batch_X']
+					valid_y_shifted = data['batch_Y']
+					valid_x_length = data['X_length']
+					valid_y_length = data['Y_length'] 
+					max_x = data['max_in']
+					max_y = data['max_out']
+					batch_groups = data['groups']
 
 
-				valid_y = np.hstack((start_token * np.ones((valid_y_shifted.shape[0], 1)), valid_y_shifted[:, :-1]))
+					valid_y = np.hstack((params["start_token"] * np.ones((valid_y_shifted.shape[0], 1)), valid_y_shifted[:, :-1]))
 
-				feed_dict = {x_input:valid_x, X_length:valid_x_length, y_input:valid_y, 
-							Y_length:valid_y_length, y_shifted_input:valid_y_shifted, groups:batch_groups}
-				predicted, valid_loss = sess.run([logits, loss_op], feed_dict)
+					feed_dict = {x_input:valid_x, X_length:valid_x_length, y_input:valid_y, 
+								Y_length:valid_y_length, y_shifted_input:valid_y_shifted, groups:batch_groups}
+					predicted, valid_loss_step = sess.run([logits, loss_op], feed_dict)
+					valid_loss = valid_loss + valid_loss_step
 
+				valid_loss = valid_loss / params["num_valid_batches"]
 				cross_entropy_valid.append(valid_loss)
 				perplexity_valid.append(math.exp(valid_loss))
 
 				if valid_loss < best_loss:
 					best_loss = valid_loss
-					saver.save(sess, 'results/best_model.cpkt')
+					saver.save(sess, 'results_model2/best_model.cpkt')
 
 				print("Epoch " + str(epoch) + ", Train Loss= " + \
 					  "{:.4f}".format(batch_cross_entropy_loss) + \
 					  ", Validation Loss= " + "{:.4f}".format(valid_loss))
 
-				np.save("results/cross_entropy_train", cross_entropy_train)
-				np.save("results/cross_entropy_valid", cross_entropy_valid)
-				np.save("results/perplexity_train", perplexity_train)
-				np.save("results/perplexity_valid", perplexity_valid)
+				np.save("results_model2/cross_entropy_train", cross_entropy_train)
+				np.save("results_model2/cross_entropy_valid", cross_entropy_valid)
+				np.save("results_model2/perplexity_train", perplexity_train)
+				np.save("results_model2/perplexity_valid", perplexity_valid)
 
 		print("Optimization Finished!")
 
 		plt.figure(0)
-		plt.plot(range(epochs//display_step), cross_entropy_valid, 'r', label="validation")
-		plt.plot(range(epochs//display_step), cross_entropy_train, 'b', label="train")
+		plt.plot(range(params["epochs"]//params["display_step"]), cross_entropy_valid, 'r', label="validation")
+		plt.plot(range(params["epochs"]//params["display_step"]), cross_entropy_train, 'b', label="train")
 		plt.legend()
 		plt.ylabel('Cross Entropy Loss')
 		plt.xlabel('Epochs')
-		filename = "results/cross_entropy.png"
+		filename = "results_model2/cross_entropy_model1.png"
 		plt.savefig(filename)
 		plt.close()
 
 		plt.figure(1)
-		plt.plot(range(epochs//display_step), perplexity_valid, 'r', label="validation")
-		plt.plot(range(epochs//display_step), perplexity_train, 'b', label="train")
+		plt.plot(range(params["epochs"]//params["display_step"]), perplexity_valid, 'r', label="validation")
+		plt.plot(range(params["epochs"]//params["display_step"]), perplexity_train, 'b', label="train")
 		plt.legend()
 		plt.ylabel('Perplexity')
 		plt.xlabel('Epochs')
-		filename = "results/Perplexity.png"
+		filename = "results_model2/Perplexity_model1.png"
 		plt.savefig(filename)
 		plt.close()

@@ -1,0 +1,17 @@
+#Define Necessary Parameters
+num_classes: 231 #Characters = 256 Ascii - upper case + norm from my understanding.
+num_input: 300 # Character Embedding feature size
+num_hidden: 256 # Given in paper
+num_groups: 5 #Defined in dataset
+encoding_layers: 4 #Given in paper
+decoding_layers: 2 #Given in paper
+vocab_size: 3644 #number of decoder words we choose to keep in dicitonary
+start_token: 3643
+end_token: 3642 #User defined
+beam_width: 1
+#Cross Validate
+learning_rate: 0.0001
+epochs: 500
+display_step: 20
+num_train_batches: 154970
+num_valid_batches: 5
