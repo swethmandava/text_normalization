@@ -188,10 +188,19 @@ measure_unit_dict = {"%": "percent", "m": "meters", "km": "kilometers", "mi": "m
                      "mA": "milli amperes", "KB": "kilobytes", "MHz": "megahertz", "V": "Volts", "GHz": "gigahertz",
                      "μg": "micrograms"}
 
-#SUP = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹".decode("utf-8"), "0123456789")
+#SUP = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")u'\xc2
+SUP = {u'\u2070' : '0' , 
+       u'\xb9' : '1' ,u'\xb2' : '2' ,
+       u'\xb3' : '3' , u'\u2074' : '4' ,
+       u'\2075' : '5' , u'\u2076' : '6' ,
+       u'\u2077' : '7' , u'\u2078' : '8' ,
+       u'\u2079' : '9' } #, '0123456789'}
+
+regex = re.compile("|".join(map(re.escape, SUP.keys())))
 
 def parse_measure(string):
     #string = string.translate(SUP)
+    string = regex.sub(lambda mo: SUP[mo.group(0)], string.decode('utf-8'))
     measure = []
     number = []
     for i, char in enumerate(string):
@@ -464,7 +473,7 @@ if __name__=='__main__':
     print parse_fraction("2 1/2")
     
     #measure
-    #"20.07 km²"
+    print parse_measure("20.07 km²")
 
     
     #electronic
