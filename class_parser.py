@@ -484,6 +484,21 @@ def parse_money(string):
         return " ".join([number, amount, currency])
     return string    
 
+def _longest_match(re_expression):
+    index_start = -1
+    index_end = -1
+    length = 0
+    for indices in re_expression.regs:
+        if indices[0] >= 0:
+            if length < indices[1] - indices[0]:
+                length = indices[1] - indices[0]
+                index_start = indices[0]
+                index_end = indices[1]
+    if length:
+        return re_expression.string[index_start: index_end]
+    else:
+        return None
+
 #############################################
 #date
 weekdays_re = "(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sun(day)?),?"
@@ -691,7 +706,55 @@ def parse_digits(string):
                 after.append('o')
             else :     
                 after.append(num2words(int(char)))            
-    return " ".join(after)        
+    return " ".join(after)     
+
+############################################
+#time
+def parse_time(string: str):
+    time = letters = ""
+
+    if len(re.findall("[a-zA-Z]", string)):
+        letters = parse_letters(string)
+        for i, char in enumerate(string):
+            if char.isalpha():
+                time = string[:i]
+                break
+    else:
+        time = string
+
+    hour = minutes = seconds = ""
+    time_splited = re.split("\W+", time)
+    if len(time_splited):
+        hour = parse_cardinal(time_splited[0])
+    if len(time_splited) > 1:
+        minutes = parse_cardinal(time_splited[1])
+        if minutes == "zero":
+            minutes = ""
+        if len(time_splited[1]):
+            if time_splited[1][0] == "0" and len(minutes):
+                minutes = "o " + minutes
+    if len(time_splited) > 2:
+        seconds = parse_cardinal(time_splited[2])
+
+    if len(hour) and len(minutes) and len(seconds):
+        time = " ".join([hour, "hours", minutes, "minutes and", seconds, "seconds"])
+    elif len(hour) and len(minutes):
+        time = " ".join([hour, minutes])
+    else:
+        time = hour
+
+    if not len(minutes) and not len(letters):
+        letters = "o'clock"
+
+    if len(letters):
+        after = " ".join([time, letters])
+    else:
+        after = time
+
+    return after    
+
+#################################################
+    
 
 if __name__=='__main__':
     
@@ -735,3 +798,11 @@ if __name__=='__main__':
     print parse_letters("M.")
     print parse_letters("af's")
     print parse_letters("us")
+    
+    #date
+    
+    #time
+    
+    #money
+    
+    #decimal
