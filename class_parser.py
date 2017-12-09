@@ -449,8 +449,249 @@ def parse_letters(string):
             after = after[:-2] + "'" + after[-1]
     return after
 
+#####################################
+#money
+def parse_money(string):
+    number = re.search("[0-9]+(,[0-9]{3})*(.[0-9]{1,3})?", string)
+    if number:
+        number = _longest_match(number)
+        number = parse_decimal(number)
 
+    currency = re.search("(US)?A?(NZ)?\$|£|€|¥", string)
+    if currency:
+        currency = _longest_match(currency)
+
+    if currency in ["$", "US$"]:
+        currency = "dollars"
+    elif currency == "£":
+        currency = "pounds"
+    elif currency == "€":
+        currency = "euros"
+
+    amount = None
+    if bool(re.fullmatch(".*[0-9] ?([Mm](illion)?).*", string)):
+        amount = "million"
+    elif bool(re.fullmatch(".*[0-9] ?([Bb]n?(illion)?).*", string)):
+        amount = "billion"
+    elif bool(re.fullmatch(".*[0-9] ?([Tt](rillion)?).*", string)):
+        amount = "trillion"
+    elif bool(re.fullmatch(".*[0-9] ?([Kk]).*", string)):
+        amount = "thousand"
+
+    if currency and number and amount is None:
+        return " ".join([number, currency])
+    elif currency and number and amount is not None:
+        return " ".join([number, amount, currency])
+    return string    
+
+#############################################
+#date
+weekdays_re = "(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sun(day)?),?"
+months_re = "(Jan(uary)?|Feb(ruary)?|Mar(ch)?|Apr(il)?|May|June?|" + \
+            "July?|Aug(ust)?|Sept?(ember)?|Oct(ober)?|Nov(ember)?|Dec(ember)?)\.?,?"
+months_num_dict = {1: "january", 2: "february", 3: "march", 4: "april",
+                   5: "may", 6: "june", 7: "july", 8: "august", 9: "september",
+                   10: "october", 11: "november", 12: "december"}
+
+months_short_dict = {"jan": "january", "feb": "february", "mar": "march", "apr": "april",
+                     "jun": "june", "jul": "july", "aug": "august", "sep": "september", "sept": "september",
+                     "oct": "october", "nov": "november", "dec": "december"}
+
+weekdays_short_dict = {"sun": "sunday"}
+
+
+def parse_date(string) :
+    if len(string) > 4:
+        if string[:4] == "the ":
+            string = string[4:]
+    string = string.replace("'", "").replace("th", "")
+    date_list = re.split("[., /-]+", string)
+    if date_list[-1] == "":
+        date_list.pop()
+    date_string = " ".join(date_list)
+    weekday = day = month = year = ""
+    opposite = False
+    if len(date_list) == 1:
+        if re.fullmatch("[0-9]{2,4}s?", date_list[0]):
+            year = date_list[0]
+    elif len(date_list) == 2:
+        if re.fullmatch(months_re + " [0-9]{3,4}", date_string):
+            month = date_list[0]
+            month = _parse_string_month(month)
+            month = month.lower()
+            year = date_list[1]
+        elif re.fullmatch(months_re + " [0-9]{1,2}", date_string):
+            opposite = True
+            month = date_list[0]
+            month = _parse_string_month(month)
+            month = month.lower()
+            day = date_list[1]
+        elif re.fullmatch("[0-9]{1,2} " + months_re, date_string):
+            month = date_list[1]
+            month = _parse_string_month(month)
+            month = month.lower()
+            day = date_list[0]
+        elif re.fullmatch("[0-9]{1,4} (BC|AD|CE|BCE)", date_string):
+            year = _parse_year(date_list[0])
+            affix = parse_letters(date_list[1])
+            return " ".join([year, affix])
+    elif len(date_list) == 3:
+        if re.fullmatch("[0-9]{1,2} " + months_re + " [0-9]{3,4}", date_string):
+            day = date_list[0]
+            month = date_list[1]
+            month = _parse_string_month(month)
+            month = month.lower()
+            year = date_list[2]
+        elif re.fullmatch(months_re + " [0-9]{1,2} [0-9]{3,4}", date_string):
+            opposite = True
+            day = date_list[1]
+            month = date_list[0]
+            month = _parse_string_month(month)
+            month = month.lower()
+            year = date_list[2]
+        elif re.fullmatch("[0-9]{1,4} [0-9]{1,2} [0-9]{2,4}", date_string):
+            if len(date_list[0]) == 4:
+                day = date_list[2]
+                month = date_list[1]
+                month = _parse_num_month(month)
+                year = date_list[0]
+            else:
+                if int(date_list[1]) <= 12:
+                    day = date_list[0]
+                    month = date_list[1]
+                else:
+                    opposite = True
+                    day = date_list[1]
+                    month = date_list[0]
+                month = _parse_num_month(month)
+                year = date_list[2]
+        elif re.fullmatch(weekdays_re + " " + months_re + " [0-9]{1,2}", date_string):
+            opposite = True
+            weekday = date_list[0]
+            weekday = _parse_weekday(weekday)
+            day = date_list[2]
+            month = date_list[1]
+            month = _parse_string_month(month)
+            month = month.lower()
+        elif re.fullmatch(weekdays_re + " [0-9]{1,2} " + months_re, date_string):
+            weekday = date_list[0]
+            weekday = _parse_weekday(weekday)
+            day = date_list[1]
+            month = date_list[2]
+            month = _parse_string_month(month)
+            month = month.lower()
+        elif re.fullmatch("[0-9]{1,4} (B C|C E|A D)", date_string):
+            return _parse_year(date_list[0]) + " " + " ".join(date_list[1:]).lower()
+    elif len(date_list) == 4:
+        if re.fullmatch(weekdays_re + " [0-9]{1,2} " + months_re + " [0-9]{3,4}", date_string):
+            weekday = date_list[0]
+            weekday = _parse_weekday(weekday)
+            day = date_list[1]
+            month = date_list[2]
+            month = _parse_string_month(month)
+            month = month.lower()
+            year = date_list[3]
+        elif re.fullmatch(weekdays_re + " " + months_re + " [0-9]{1,2} [0-9]{3,4}", date_string):
+            opposite = True
+            weekday = date_list[0]
+            weekday = _parse_weekday(weekday)
+            day = date_list[2]
+            month = date_list[1]
+            month = _parse_string_month(month)
+            month = month.lower()
+            year = date_list[3]
+    if len(year):
+        year = _parse_year(year)
+        if string[-1] == "s":
+            if year[-1] == "y":
+                year = year[:-1] + "ies"
+            elif year[-1] == "x":
+                year += "es"
+            else:
+                year += "s"
+
+    if len(day):
+        day = parse_ordinals(day)
+    if len(weekday) and len(day) and len(month) and len(year):
+        if opposite:
+            return " ".join([weekday, month, day, year])
+        else:
+            return " ".join([weekday, "the", day, "of", month, year])
+    elif len(day) and len(month) and len(year):
+        if opposite:
+            return " ".join([month, day, year])
+        else:
+            return " ".join(["the", day, "of", month, year])
+    elif len(day) and len(month) and len(weekday):
+        if opposite:
+            return " ".join([weekday, month, day])
+        else:
+            return " ".join([weekday, "the", day, "of", month])
+    elif len(month) and len(year):
+        return " ".join([month, year])
+    elif len(month) and len(day):
+        if opposite:
+            return " ".join([month, day])
+        else:
+            return " ".join(["the", day, "of", month])
+    elif len(year):
+        return year
+
+    return string
+
+
+def _parse_year(string):
+    string = string.replace("'", "").replace("s", "")
+    if len(string) == 2:
+        if string[0] == "0":
+            return " ".join(["o", parse_cardinal(string[1])])
+        else:
+            return parse_cardinal(string)
+    elif string[1:3] == "00":
+        return parse_cardinal(string)
+    elif string[-2:] == "00" and string[:2] not in ["10", "20"]:
+        return " ".join([parse_cardinal(string[:-2]), "hundred"])
+    elif string[1:3].isdigit():
+        if string[-2] == "0":
+            return " ".join([parse_cardinal(string[:-2]), "o", parse_cardinal(string[-1])])
+        else:
+            return " ".join([parse_cardinal(string[:-2]), parse_cardinal(string[-2:])])
+    return string
+
+
+def _parse_num_month(string):
+    if int(string) in months_num_dict:
+        return months_num_dict[int(string)]
+    else:
+        return "month_error"
+
+
+def _parse_weekday(string):
+    if string.lower() in weekdays_short_dict:
+        return weekdays_short_dict[string.lower()]
+    else:
+        return string.lower()
+
+
+def _parse_string_month(string):
+    if string.lower() in months_short_dict:
+        return months_short_dict[string.lower()]
+    else:
+        return string
+    
 ################################################
+#digits
+def parse_digits(string):
+    #if string == "007":
+    #    return "double o seven"
+    after = []
+    for char in string:
+        if char.isdigit() : # in digits_dict:
+            if char == '0' :
+                after.append('o')
+            else :     
+                after.append(num2words(int(char)))            
+    return " ".join(after)        
 
 if __name__=='__main__':
     
